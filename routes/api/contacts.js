@@ -3,7 +3,8 @@ const router = express.Router();
 
 const Joi = require("Joi");
 
-const {Contact} = require('../../model');
+const { authenticate } = require("../../middlewares");
+const { Contact } = require('../../model');
 
 const joiSchema = Joi.object({
   name: Joi.string().required(),
@@ -12,15 +13,16 @@ const joiSchema = Joi.object({
   favorite: Joi.bool
 });
 
-router.get('/', async (req, res, next) => { 
+router.get('/', authenticate, async (req, res, next) => { 
   try {
-    const contacts = await Contact.find();
+    const { page = 1, limit = 20 } = req.query;
+    const skip = (page - 1) * limit;
+    const { _id } = req.user;
+    const contacts = await Contact.find({owner: _id}, "-__v", {skip, limt: +limit});
     res.json(contacts)
     } catch (error) {
-    next(error);
-    
+    next(error);  
   }
-  
 })
 
 router.get('/:contactId', async (req, res, next) => {
@@ -41,7 +43,7 @@ router.get('/:contactId', async (req, res, next) => {
   }
 })
 
-router.post('/', async (req, res, next) => {
+router.post('/', authenticate, async (req, res, next) => {
   try {
     const { error } = joiSchema.validate(req.body);
     if (error) {
@@ -49,7 +51,8 @@ router.post('/', async (req, res, next) => {
       error.status = 400;
       throw error;
     }
-    const newContact = await Contact.create(req.body);
+    const { _id } = req.user;
+    const newContact = await Contact.create({ ...req.body, owner: _id });
     res.status(201).json(newContact);
   } catch (error) {
     next(error);
@@ -95,6 +98,12 @@ router.put('/:contactId', async (req, res, next) => {
 
 router.patch('/:contactId/favorite', async (req, res, next) => {
   try {
+    const { error } = joiSchema.validate(req.body);
+    if (error) {
+      const error = new Error("missing field favorite");
+      error.status = 400;
+      throw error;
+    }
     const { contactId } = req.params;
     const { favorite } = req.body;
     const updateContact = await Contact.findByIdAndUpdate(contactId, {favorite}, {new: true});
